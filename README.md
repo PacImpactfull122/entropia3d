@@ -13,7 +13,7 @@ O objetivo foi entender como instruções como `CPUID`, `RDTSC` e `RDMSR` funcio
 - Lê contadores de hardware via `RDMSR` (instruções retiradas, cache misses L1/L2, branch mispredictions, ciclos de stall)
 - Usa `CPUID` em assembly puro para detectar topologia, frequências, cache e features ISA do processador
 - Calcula entropia de Shannon normalizada sobre as distribuições dos contadores por núcleo
-- Renderiza uma superfície 3D animada com colormap oceano mostrando a entropia por núcleo ao longo do tempo
+- Renderiza uma superfície 3D animada onde a amplitude base de cada coluna reflete a entropia do núcleo correspondente, com modulação senoidal estética sobre os dados reais
 - Exporta os dados para um visualizador Python com gráficos de histórico, IPC e métricas por núcleo
 
 ---
@@ -107,6 +107,27 @@ O estado completo da grade de entropia pode ser salvo e restaurado em formato bi
 | `L`                | carregar snapshot             |
 | `D`                | sobrepor log na tela          |
 | `ESC`              | sair                          |
+
+---
+
+## visualização
+
+A superfície 3D mistura dados reais com componente estética. É importante separar os dois.
+
+**Dado real:** o índice de entropia calculado para cada núcleo determina a amplitude base `a` da coluna correspondente na grade. O colormap oceano também é mapeado diretamente sobre esse valor. Se a entropia de um núcleo for alta, a coluna é alta e clara; se for baixa, é rasa e escura.
+
+**Componente estética:** a altura final de cada célula da grade não é só `a`. A fórmula aplicada em `renderizador_atualizar_grid` é:
+
+```
+v = a
+  + (1 - a) * 0.4 * sin(fj * 2π + fi * 5.5 + ft * 2.0)
+  + a        * 0.3 * cos(fj * 3π - fi * 2π + ft * 2.5)
+  + 0.08     * sin((fj * 2 + fi * 1.5) * 2.5π + ft * 1.7)
+```
+
+Onde `fi` e `fj` são as coordenadas normalizadas da célula na grade e `ft` é uma fase que avança a cada frame. As ondas senoidais são puramente visuais — tornam a superfície dinâmica e legível em vez de uma grade plana estática. Os coeficientes foram escolhidos para que núcleos com entropia alta produzam ondas mais caóticas e núcleos com entropia baixa produzam ondas mais suaves, mantendo coerência visual com os dados.
+
+A representação direta e sem modulação seria uma grade de barras estáticas, o que dificulta a leitura de variações pequenas entre núcleos.
 
 ---
 
