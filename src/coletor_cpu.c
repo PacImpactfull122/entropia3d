@@ -211,8 +211,12 @@ ResultadoInicializacao inicializar(void)
 
     uint8_t contadores = obter_contadores_pmu(max_leaf);
 
-    // ! eax zero em leaf dez indica que a instrucao nao e suportada neste modelo
-    if (contadores == 0) {
+    // * amd nao implementa cpuid leaf 0x0a, verificacao de pmu intel nao se aplica
+    if (s_info_cpu.fabricante_id == FAB_AMD) {
+        s_info_cpu.contadores_disponiveis = 4;
+        s_info_cpu.modo_degradado         = false;
+    } else if (contadores == 0) {
+        // ! eax zero em leaf dez indica que a instrucao nao e suportada neste modelo
         uint32_t eax_raw, ebx_raw, ecx_raw, edx_raw;
         cpuid_asm(0x0A, 0, &eax_raw, &ebx_raw, &ecx_raw, &edx_raw);
 
