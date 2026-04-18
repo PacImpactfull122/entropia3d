@@ -59,18 +59,20 @@ ResultadoInicializacao renderizador_inicializar(Resolucao resolucao) {
 
 static float s_historico[HIST_LEN][GRID_N];
 static float s_grid_suavizado[HIST_LEN][GRID_N];
-static float s_fase_onda = 0.0f;
-static int   s_hist_ok   = 0;
+static float s_fase_onda  = 0.0f;
+static int   s_hist_ok    = 0;
+// * amplitude suavizada entre frames para evitar saltos quando os dados de entropia atualizam
+static float s_amp_suav[GRID_N];
 
 void renderizador_atualizar_grid(const GradeEntropia *grade) {
     if (!s_hist_ok) {
         memset(s_historico,      0, sizeof(s_historico));
         memset(s_grid_suavizado, 0, sizeof(s_grid_suavizado));
+        for (int j = 0; j < GRID_N; j++) s_amp_suav[j] = 0.5f;
         s_hist_ok = 1;
     }
 
-    s_fase_onda += 0.05f;
-    if (s_fase_onda > 6.2831853f) s_fase_onda = 0.0f;
+    s_fase_onda = fmodf(s_fase_onda + 0.05f, 6.2831853f);
 
     float ft = s_fase_onda;
 
@@ -104,11 +106,16 @@ void renderizador_atualizar_grid(const GradeEntropia *grade) {
 
     // * gera superficie 2d com onda real em ambos os eixos
     // * amplitude por coluna reflete a entropia do nucleo correspondente
+    // * interpola amplitude suavizada em direcao ao valor alvo, fator baixo para transicao lenta
+    for (int j = 0; j < GRID_N; j++) {
+        s_amp_suav[j] += (amp[j] - s_amp_suav[j]) * 0.04f;
+    }
+
     for (int i = 0; i < GRID_N; i++) {
         float fi = (float)i / (float)(GRID_N - 1);
         for (int j = 0; j < GRID_N; j++) {
             float fj = (float)j / (float)(GRID_N - 1);
-            float a  = amp[j];
+            float a  = s_amp_suav[j];
 
             float v = a
                     + (1.0f - a) * 0.4f * sinf(fj * 6.28f + fi * 5.50f + ft * 2.0f)
