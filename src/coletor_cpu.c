@@ -149,7 +149,7 @@ static uint8_t obter_contadores_pmu(uint32_t max_leaf)
     return (uint8_t)((eax >> 8) & 0xFFU);
 }
 
-// * compara string de fabricante do cpuid para identificar intel ou amd
+// * primeiros tres bytes da string de fabricante distinguem intel de amd
 static FabricanteID detectar_fabricante_id(const char fab[13])
 {
     if (fab[0] == 'G' && fab[1] == 'e' && fab[2] == 'n') return FAB_INTEL;
@@ -157,7 +157,7 @@ static FabricanteID detectar_fabricante_id(const char fab[13])
     return FAB_DESCONHECIDO;
 }
 
-// * familia 0x17 e zen1 ou zen2, familia 0x19 e zen3 ou zen4, modelo discrimina dentro da familia
+// * familia e modelo vem do cpuid leaf 1, valores documentados no amd ppr
 static GeracaoZen detectar_geracao_zen(uint8_t familia, uint32_t modelo)
 {
     if (familia == 0x17U) {
@@ -291,19 +291,18 @@ void coletar_amostras(void)
 
     uint8_t total_nucleos = s_info_cpu.numero_nucleos_fisicos;
 
-    // * enderecos de msr variam por fabricante
-    // * intel usa contadores fixos ia32 e pmc, amd usa aperf mperf e perf_ctr
+    // * enderecos selecionados uma vez antes do loop, evita branch por nucleo
     uint32_t msr_instrucoes, msr_ciclos, msr_l1, msr_l2, msr_branch, msr_stall;
 
     if (s_info_cpu.fabricante_id == FAB_AMD) {
-        // * aperf acumula ciclos efetivos, usado como proxy de instrucoes em amd
-        msr_instrucoes = 0xC0010201U;  /* perf_ctr0 */
-        msr_ciclos     = 0xE7U;        /* aperf */
-        msr_l1         = 0xC0010203U;  /* perf_ctr1 */
-        msr_l2         = 0xC0010205U;  /* perf_ctr2 */
-        msr_branch     = 0xC0010207U;  /* perf_ctr3 */
-        // ! amd nao tem contador fixo de stall equivalente ao intel, aperf mperf ratio e usado
-        msr_stall      = 0xE8U;        /* mperf como aproximacao */
+        // * amd nao tem contadores fixos ia32, perf_ctr requer programacao previa via perf_ctl
+        msr_instrucoes = 0xC0010201U;
+        msr_ciclos     = 0xE7U;
+        msr_l1         = 0xC0010203U;
+        msr_l2         = 0xC0010205U;
+        msr_branch     = 0xC0010207U;
+        // ! mperf e ciclos de referencia, nao de stall, valor e aproximado em amd
+        msr_stall      = 0xE8U;
     } else {
         msr_instrucoes = 0x309U;
         msr_ciclos     = 0x30AU;
