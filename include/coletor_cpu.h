@@ -56,6 +56,22 @@ typedef struct {
     uint16_t assoc_l3;
 } TopologiaCache;
 
+// * detectado via string de fabricante do cpuid leaf 0
+typedef enum {
+    FAB_INTEL      = 0,
+    FAB_AMD        = 1,
+    FAB_DESCONHECIDO = 2
+} FabricanteID;
+
+// * geracoes zen identificadas via familia cpuid para selecao de msrs corretos
+typedef enum {
+    ZEN_DESCONHECIDO = 0,
+    ZEN_1            = 1,  /* familia 0x17 modelo < 0x30 */
+    ZEN_2            = 2,  /* familia 0x17 modelo >= 0x30 */
+    ZEN_3            = 3,  /* familia 0x19 modelo < 0x50 */
+    ZEN_4            = 4   /* familia 0x19 modelo >= 0x50 */
+} GeracaoZen;
+
 typedef struct {
     char          fabricante[13];
     char          marca[49];
@@ -71,6 +87,8 @@ typedef struct {
     TopologiaCache cache;
     FeaturesISA   features;
     bool          modo_degradado;
+    FabricanteID  fabricante_id;
+    GeracaoZen    geracao_zen;
 } InfoCPU;
 
 typedef struct {

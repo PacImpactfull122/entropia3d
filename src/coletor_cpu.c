@@ -149,6 +149,26 @@ static uint8_t obter_contadores_pmu(uint32_t max_leaf)
     return (uint8_t)((eax >> 8) & 0xFFU);
 }
 
+// * compara string de fabricante do cpuid para identificar intel ou amd
+static FabricanteID detectar_fabricante_id(const char fab[13])
+{
+    if (fab[0] == 'G' && fab[1] == 'e' && fab[2] == 'n') return FAB_INTEL;
+    if (fab[0] == 'A' && fab[1] == 'u' && fab[2] == 't') return FAB_AMD;
+    return FAB_DESCONHECIDO;
+}
+
+// * familia 0x17 e zen1 ou zen2, familia 0x19 e zen3 ou zen4, modelo discrimina dentro da familia
+static GeracaoZen detectar_geracao_zen(uint8_t familia, uint32_t modelo)
+{
+    if (familia == 0x17U) {
+        return (modelo < 0x30U) ? ZEN_1 : ZEN_2;
+    }
+    if (familia == 0x19U) {
+        return (modelo < 0x50U) ? ZEN_3 : ZEN_4;
+    }
+    return ZEN_DESCONHECIDO;
+}
+
 ResultadoInicializacao inicializar(void)
 {
     ResultadoInicializacao resultado;
@@ -179,6 +199,10 @@ ResultadoInicializacao inicializar(void)
         &s_info_cpu.stepping,
         &s_info_cpu.numero_nucleos_logicos
     );
+    s_info_cpu.fabricante_id = detectar_fabricante_id(s_info_cpu.fabricante);
+    s_info_cpu.geracao_zen   = (s_info_cpu.fabricante_id == FAB_AMD)
+        ? detectar_geracao_zen(s_info_cpu.familia, s_info_cpu.modelo)
+        : ZEN_DESCONHECIDO;
     s_info_cpu.numero_nucleos_fisicos = obter_nucleos_fisicos(max_ext);
     obter_cache(&s_info_cpu.cache, max_leaf);
     obter_frequencias(&s_info_cpu.freq_base_mhz, &s_info_cpu.freq_boost_mhz,
@@ -267,74 +291,97 @@ void coletar_amostras(void)
 
     uint8_t total_nucleos = s_info_cpu.numero_nucleos_fisicos;
 
+    // * enderecos de msr variam por fabricante
+    // * intel usa contadores fixos ia32 e pmc, amd usa aperf mperf e perf_ctr
+    uint32_t msr_instrucoes, msr_ciclos, msr_l1, msr_l2, msr_branch, msr_stall;
+
+    if (s_info_cpu.fabricante_id == FAB_AMD) {
+        // * aperf acumula ciclos efetivos, usado como proxy de instrucoes em amd
+        msr_instrucoes = 0xC0010201U;  /* perf_ctr0 */
+        msr_ciclos     = 0xE7U;        /* aperf */
+        msr_l1         = 0xC0010203U;  /* perf_ctr1 */
+        msr_l2         = 0xC0010205U;  /* perf_ctr2 */
+        msr_branch     = 0xC0010207U;  /* perf_ctr3 */
+        // ! amd nao tem contador fixo de stall equivalente ao intel, aperf mperf ratio e usado
+        msr_stall      = 0xE8U;        /* mperf como aproximacao */
+    } else {
+        msr_instrucoes = 0x309U;
+        msr_ciclos     = 0x30AU;
+        msr_l1         = 0xC1U;
+        msr_l2         = 0xC2U;
+        msr_branch     = 0xC3U;
+        msr_stall      = 0x30AU;
+    }
+
     for (uint8_t nucleo = 0; nucleo < total_nucleos; nucleo++) {
         EntradaAmostra amostra;
         amostra.timestamp = ler_rdtsc();
 
-        // * msr ia32_fixed_ctr0 conta instrucoes retiradas
         if (s_msr_ativo[nucleo][0]) {
-            if (!ler_msr(0x309, &amostra.instrucoes_retiradas)) {
+            if (!ler_msr(msr_instrucoes, &amostra.instrucoes_retiradas)) {
                 s_msr_ativo[nucleo][0] = false;
-                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, 0x309);
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_instrucoes);
                 amostra.instrucoes_retiradas = 0;
             }
         } else {
             amostra.instrucoes_retiradas = 0;
         }
 
-        // * ciclos_clock usa o mesmo tsc lido no timestamp como aproximacao de ciclos
-        amostra.ciclos_clock = amostra.timestamp;
+        if (s_msr_ativo[nucleo][5]) {
+            if (!ler_msr(msr_ciclos, &amostra.ciclos_clock)) {
+                s_msr_ativo[nucleo][5] = false;
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_ciclos);
+                amostra.ciclos_clock = amostra.timestamp;
+            }
+        } else {
+            // * fallback para tsc quando o msr de ciclos nao esta disponivel
+            amostra.ciclos_clock = amostra.timestamp;
+        }
 
-        // * msr ia32_pmc0 configurado para cache miss l1
         if (s_msr_ativo[nucleo][1]) {
-            if (!ler_msr(0xC1, &amostra.cache_miss_l1)) {
+            if (!ler_msr(msr_l1, &amostra.cache_miss_l1)) {
                 s_msr_ativo[nucleo][1] = false;
-                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, 0xC1);
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_l1);
                 amostra.cache_miss_l1 = 0;
             }
         } else {
             amostra.cache_miss_l1 = 0;
         }
 
-        // * msr ia32_pmc1 configurado para cache miss l2
         if (s_msr_ativo[nucleo][2]) {
-            if (!ler_msr(0xC2, &amostra.cache_miss_l2)) {
+            if (!ler_msr(msr_l2, &amostra.cache_miss_l2)) {
                 s_msr_ativo[nucleo][2] = false;
-                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, 0xC2);
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_l2);
                 amostra.cache_miss_l2 = 0;
             }
         } else {
             amostra.cache_miss_l2 = 0;
         }
 
-        // * msr ia32_pmc2 configurado para branch mispredictions
         if (s_msr_ativo[nucleo][3]) {
-            if (!ler_msr(0xC3, &amostra.branch_mispredictions)) {
+            if (!ler_msr(msr_branch, &amostra.branch_mispredictions)) {
                 s_msr_ativo[nucleo][3] = false;
-                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, 0xC3);
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_branch);
                 amostra.branch_mispredictions = 0;
             }
         } else {
             amostra.branch_mispredictions = 0;
         }
 
-        // * msr ia32_fixed_ctr1 conta ciclos de stall do pipeline
         if (s_msr_ativo[nucleo][4]) {
-            if (!ler_msr(0x30A, &amostra.ciclos_stall)) {
+            if (!ler_msr(msr_stall, &amostra.ciclos_stall)) {
                 s_msr_ativo[nucleo][4] = false;
-                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, 0x30A);
+                registrar_erro("ColetorCPU", E_MSR_INDISPONIVEL, msr_stall);
                 amostra.ciclos_stall = 0;
             }
         } else {
             amostra.ciclos_stall = 0;
         }
 
-        // * em modo degradado apenas contadores fixos sao usados, registrar aviso uma vez
         if (s_info_cpu.modo_degradado) {
             registrar(NIVEL_AVISO, "ColetorCPU", "coleta em modo degradado, contadores programaveis indisponiveis");
         }
 
-        // * insere amostra no buffer circular do nucleo
         BufferAmostras *buf = &s_buffers[nucleo];
         buf->entradas[buf->indice_escrita] = amostra;
         buf->indice_escrita = (buf->indice_escrita + 1) % CAPACIDADE_BUFFER_AMOSTRAS;
