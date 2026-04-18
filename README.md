@@ -1,6 +1,9 @@
 # entropia3d
 
-![visualizacao](screenshot.png)
+<p align="center">
+  <img src="screenshot.png" width="48%" alt="visualizacao 3d">
+  <img src="tela2.png" width="48%" alt="visualizacao 3d detalhada">
+</p>
 
 Projeto de estudo sobre assembly x86-64 e teoria da informação aplicada a métricas de CPU em tempo real.
 
