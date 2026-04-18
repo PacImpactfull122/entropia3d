@@ -99,13 +99,9 @@ O estado completo da grade de entropia pode ser salvo e restaurado em formato bi
 
 ## controles SDL2
 
-| tecla / ação       | efeito                        |
+| tecla / acao       | efeito                        |
 |--------------------|-------------------------------|
-| arrastar mouse     | rotacionar câmera             |
-| scroll             | zoom                          |
-| setas              | translação                    |
-| `R`                | reset de câmera               |
-| `F`                | focar no minitop selecionado  |
+| clique esquerdo    | selecionar minitop            |
 | `S`                | salvar snapshot               |
 | `L`                | carregar snapshot             |
 | `D`                | sobrepor log na tela          |

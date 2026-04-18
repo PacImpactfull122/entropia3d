@@ -124,9 +124,25 @@ static void obter_frequencias(uint16_t *base, uint16_t *boost, uint16_t *barrame
 }
 
 // * leaf 0x80000008 fornece nucleos fisicos em amd e intel modernos
+// * leaf 0x1 ebx bits 23:16 dao o total de threads logicas no pacote
+// * leaf 0xb sub-leaf 0 ebx bits 15:0 dao threads por nucleo smt
+// * divisao resulta em nucleos fisicos, com fallback para leaf 4 e ext8 se 0xb indisponivel
 static uint8_t obter_nucleos_fisicos(uint32_t max_ext)
 {
     uint32_t eax, ebx, ecx, edx;
+
+    asm_cpuid_leaf1(&eax, &ebx, &ecx, &edx);
+    uint8_t total_logicos = (uint8_t)((ebx >> 16) & 0xFFU);
+
+    asm_cpuid(0xBU, 0, &eax, &ebx, &ecx, &edx);
+    uint8_t threads_por_nucleo = (uint8_t)(ebx & 0xFFFFU);
+
+    if (total_logicos > 0 && threads_por_nucleo > 0) {
+        uint8_t fisicos = total_logicos / threads_por_nucleo;
+        return fisicos > 0 ? fisicos : 1;
+    }
+
+    // * fallback para cpus sem leaf 0xb
     asm_cpuid_leaf4(0, &eax, &ebx, &ecx, &edx);
     uint8_t via_leaf4 = (uint8_t)(((eax >> 26) & 0x3FU) + 1U);
 

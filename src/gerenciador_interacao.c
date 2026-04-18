@@ -52,11 +52,6 @@ static Vec3f    posicao_foco_destino   = { 0.0f, 0.0f, 0.0f };
 // * ponteiro para camera ativa, definido na inicializacao
 static EstadoCamera *camera_ativa = NULL;
 
-static float clampf(float valor, float minimo, float maximo) {
-    if (valor < minimo) return minimo;
-    if (valor > maximo) return maximo;
-    return valor;
-}
 
 static bool fila_vazia(void) {
     return fila_tamanho == 0;
@@ -336,70 +331,15 @@ static void sincronizar_minitops(GradeEntropia *grade) {
     lista_selecao.contagem = idx;
 }
 
-static void aplicar_rotacao(EstadoCamera *cam, float delta_x, float delta_y) {
-    cam->rotacao_horizontal += delta_x * SENSIBILIDADE_ROTACAO;
-    cam->rotacao_vertical   += delta_y * SENSIBILIDADE_ROTACAO;
-    // * vertical limitada a noventa graus para evitar gimbal lock
-    cam->rotacao_vertical = clampf(cam->rotacao_vertical, -90.0f, 90.0f);
-}
 
-static void aplicar_zoom(EstadoCamera *cam, int32_t delta) {
-    float novo_zoom = cam->zoom + (float)delta * FATOR_ZOOM_SCROLL;
-    cam->zoom = clampf(novo_zoom, 0.1f, 10.0f);
-}
 
-static void aplicar_translacao(EstadoCamera *cam, uint8_t scancode) {
-    switch (scancode) {
-        case SCANCODE_SETA_CIMA:
-            cam->posicao.y += PASSO_TRANSLACAO;
-            break;
-        case SCANCODE_SETA_BAIXO:
-            cam->posicao.y -= PASSO_TRANSLACAO;
-            break;
-        case SCANCODE_SETA_ESQ:
-            cam->posicao.x -= PASSO_TRANSLACAO;
-            break;
-        case SCANCODE_SETA_DIR:
-            cam->posicao.x += PASSO_TRANSLACAO;
-            break;
-        default:
-            break;
-    }
-}
 
-static void executar_reset_camera(EstadoCamera *cam) {
-    *cam = CAMERA_PADRAO;
-    animacao_foco_ativa    = false;
-    quadros_foco_restantes = 0;
-    registrar(NIVEL_INFO, "GerenciadorInteracao", "reset de camera executado");
-}
 
-static void iniciar_animacao_foco(EstadoCamera *cam) {
-    // * busca o primeiro minitop selecionado para centralizar
-    uint32_t i;
-    for (i = 0; i < lista_selecao.contagem; i++) {
-        if (lista_selecao.minitops[i].selecionado) {
-            posicao_foco_origem  = cam->posicao;
-            posicao_foco_destino = lista_selecao.minitops[i].coordenada;
-            // * ajusta z para manter distancia de visualizacao
-            posicao_foco_destino.z -= 20.0f;
-            animacao_foco_ativa    = true;
-            quadros_foco_restantes = QUADROS_ANIMACAO_FOCO;
-            return;
-        }
-    }
-    // * nenhum minitop selecionado, foco ignorado
-}
 
 static void processar_evento_individual(EventoEntrada *ev, EstadoCamera *cam, GradeEntropia *grade) {
 
     switch (ev->tipo) {
         case EVENTO_MOVIMENTO_MOUSE:
-            if (botao_esq_pressionado) {
-                float dx = (float)(ev->posicao_cursor.x - posicao_mouse_anterior.x);
-                float dy = (float)(ev->posicao_cursor.y - posicao_mouse_anterior.y);
-                aplicar_rotacao(cam, dx, dy);
-            }
             posicao_mouse_anterior = ev->posicao_cursor;
             break;
 
@@ -412,24 +352,8 @@ static void processar_evento_individual(EventoEntrada *ev, EstadoCamera *cam, Gr
             }
             break;
 
-        case EVENTO_SCROLL_MOUSE:
-            aplicar_zoom(cam, ev->delta_scroll);
-            break;
-
         case EVENTO_TECLA_PRESSIONADA:
             switch (ev->tecla) {
-                case SCANCODE_SETA_CIMA:
-                case SCANCODE_SETA_BAIXO:
-                case SCANCODE_SETA_ESQ:
-                case SCANCODE_SETA_DIR:
-                    aplicar_translacao(cam, ev->tecla);
-                    break;
-                case SCANCODE_R:
-                    executar_reset_camera(cam);
-                    break;
-                case SCANCODE_F:
-                    iniciar_animacao_foco(cam);
-                    break;
                 case SCANCODE_S:
                     if (grade != NULL) {
                         serializar(grade, s_buffer_snapshot, TAMANHO_BUFFER_SNAPSHOT);
